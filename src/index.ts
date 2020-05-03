@@ -7,10 +7,10 @@ import * as restify from 'restify';
 
 // Import required bot services.
 // See https://aka.ms/bot-services to learn more about the different parts of a bot.
-import { BotFrameworkAdapter } from 'botbuilder';
+import { BotFrameworkAdapter, MemoryStorage, UserState  } from 'botbuilder';
 
 // This bot's main dialog.
-import { EchoBot } from './bot';
+import { OrderAssistantBot } from './bot';
 
 const ENV_FILE = path.join(__dirname, '..', '.env');
 config({ path: ENV_FILE });
@@ -52,9 +52,11 @@ const onTurnErrorHandler = async (context, error) => {
 
 // Set the onTurnError for the singleton BotFrameworkAdapter.
 adapter.onTurnError = onTurnErrorHandler;
-
+//in memory storage
+const memoryStorage = new MemoryStorage();
+const userState = new UserState(memoryStorage);
 // Create the main dialog.
-const myBot = new EchoBot();
+const myBot = new OrderAssistantBot(userState);
 
 // Listen for incoming requests.
 server.post('/api/messages', (req, res) => {
