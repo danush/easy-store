@@ -7,7 +7,7 @@ import * as restify from 'restify';
 
 // Import required bot services.
 // See https://aka.ms/bot-services to learn more about the different parts of a bot.
-import { BotFrameworkAdapter, MemoryStorage, UserState  } from 'botbuilder';
+import { BotFrameworkAdapter, MemoryStorage, ConversationState, UserState  } from 'botbuilder';
 
 // This bot's main dialog.
 import { OrderAssistantBot } from './bot';
@@ -54,9 +54,10 @@ const onTurnErrorHandler = async (context, error) => {
 adapter.onTurnError = onTurnErrorHandler;
 //in memory storage
 const memoryStorage = new MemoryStorage();
+const conversationState = new ConversationState(memoryStorage);
 const userState = new UserState(memoryStorage);
 // Create the main dialog.
-const myBot = new OrderAssistantBot(userState);
+const myBot = new OrderAssistantBot(conversationState , userState);
 
 // Listen for incoming requests.
 server.post('/api/messages', (req, res) => {

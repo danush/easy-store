@@ -7,19 +7,23 @@ import {
     ActivityHandler, 
     MessageFactory, 
     TurnContext, 
-    UserState } from 'botbuilder';
+    UserState, 
+    ConversationState} from 'botbuilder';
 
 import {LuisRecognizer, LuisApplication, LuisRecognizerOptionsV2, LuisRecognizerOptionsV3} from 'botbuilder-ai';
-
+import { UserConversationState, UserStateContext } from './userStateContext';
+import { extractEntity, crateItem, crateUserContext } from './util';
 export class OrderAssistantBot extends ActivityHandler {
 
     dispatchRecognizer: LuisRecognizer;
-    userStatePropName = 'userTransitionState';
-    userTransitionState: any;
+    userState;
+    userStateContext;
 
-    constructor(userState: UserState) {
+    constructor(conversationState: ConversationState, userState: UserState) {
         super();
-        
+        if (!conversationState) throw new Error('[DialogBot]: Missing parameter. conversationState is required');
+        if (!userState) throw new Error('[DialogBot]: Missing parameter. userState is required');
+
         const dispatchRecognizer = new LuisRecognizer({
             applicationId: process.env.LuisAppId,
             endpointKey: process.env.LuisAPIKey,
@@ -27,53 +31,66 @@ export class OrderAssistantBot extends ActivityHandler {
         }, <LuisRecognizerOptionsV2> {
             includeAllIntents: true,
             includeInstanceData: true,
-            staging: /"1"/.test(process.env.LuisIsStaging)
+            staging: true
         }, true);
 
         this.dispatchRecognizer = dispatchRecognizer;
+        this.userState = userState;
+        this.userStateContext = userState.createProperty('userStateContext');
+
             
         // See https://aka.ms/about-bot-activity-message to learn more about the message and other activity types.
         this.onMessage(async (context, next) => {
-            console.log('Processing Message Activity.');
-            console.log(context.activity.text)
-            const replyText = `Echo: ${ context.activity.text }`;
-            var recognizerResult;
+            
+            const usrCtx = await this.userStateContext.get(context, {});
 
-            console.log("**************************************");
-                console.log(context);
-                console.log(JSON.stringify(context));
-                console.log("***************************************");
-            
-            try{ 
-                recognizerResult = await dispatchRecognizer.recognize(context);
-                const intent = LuisRecognizer.topIntent(recognizerResult);
-                console.log("**************************************");
-                console.log(intent);
-                console.log(JSON.stringify(intent));
-                console.log("***************************************");
-            }catch(e){
-                console.log(e)
-                console.log(JSON.stringify(e))
-            }
+            const recognizerResult = await dispatchRecognizer.recognize(context);
+            //we can update luis's app 
+            const intent = LuisRecognizer.topIntent(recognizerResult);
+            var newUserCtx = crateUserContext(usrCtx);
 
-            // switch (expression) {
-            //     case constant - expression1: {
-            //         //statements; 
-            //         break;
-            //     }
-            //     case constant_expression2: {
-            //         //statements; 
-            //         break;
-            //     }
-            //     default: {
-            //         //statements; 
-            //         break;
-            //     }
-            // } 
+            switch (usrCtx.currentState) {
+                case UserConversationState.CreateOrder: {
+                    if(/AddItemToCart/i.test(intent)){
+                        let applianceName = extractEntity(recognizerResult);
+                        if(!/tv|television|fridge|refrigerator|oven/gi.test( applianceName ) ){
+                            await context.sendActivity(MessageFactory.text("Sorry we don't sell '"+applianceName+"'. Please order either a fridge, tv or an oven."));
+                        }else{
+                            var item = crateItem(applianceName);
+
+                            newUserCtx.setState(UserConversationState.AddMoreItemsQuestion);
+                            await this.userStateContext.set(context, newUserCtx );
+
+                            await context.sendActivity(MessageFactory.text(item.getName()+" is added to your cart."));
+                            await context.sendActivity(MessageFactory.text("Do you like to buy more Items?"));
+                        }
+                    }
+                    
+                    break;
+                }
+                case UserConversationState.AddMoreItemsQuestion: {
+                    if(/NotOk/i.test(intent)){
+                        newUserCtx.setState(UserConversationState.createShipping);
+                        await this.userStateContext.set(context, newUserCtx );
+                        await context.sendActivity(MessageFactory.text("Where do you need to ship this order?. Please tell me the complete address."));
+                    }else{
+                        newUserCtx.setState(UserConversationState.CreateOrder);
+                        await this.userStateContext.set(context, newUserCtx );
+                        await context.sendActivity(MessageFactory.text("What else would you like to add in to this order?."));
+                    }
+                    
+                    break;
+                }
+                case UserConversationState.createShipping: {
+                    await context.sendActivity(MessageFactory.text("Thank you! We will ship your order to : "+context.activity.text));
+                    break;
+                }
+                default: {
+                    await context.sendActivity(MessageFactory.text("Sorry, I did not catch that."));
+                    break;
+                }
+            } 
             
-            
-            await context.sendActivity(MessageFactory.text(replyText, replyText));
-            // By calling next() you ensure that the next BotHandler is run.
             await next();
         });
 
@@ -82,6 +99,8 @@ export class OrderAssistantBot extends ActivityHandler {
 
             for (const member of membersAdded) {
                 if (member.id !== context.activity.recipient.id) {
+                    await this.userStateContext.set(context, new UserStateContext(UserConversationState.CreateOrder, []));
+
                     await context.sendActivity(MessageFactory.text('Hello and welcome to the EasyStore!'));
                     await context.sendActivity(MessageFactory.text('I\'m Axio, the store\'s vertual assistant.' + 
                         ' I\'m gonna help you to place an order within few steps.'));
@@ -93,30 +112,11 @@ export class OrderAssistantBot extends ActivityHandler {
         });
     }
 
-    private async sendIntroCard(context: TurnContext) {
-        const card = CardFactory.heroCard(
-            'Welcome to Bot Framework!',
-            'Welcome to Welcome Users bot sample! This Introduction card is a great way to introduce your Bot to the user and suggest some things to get them started. We use this opportunity to recommend a few next steps for learning more creating and deploying bots.',
-            ['https://aka.ms/bf-welcome-card-image'],
-            [
-                {
-                    title: 'Get an overview',
-                    type: ActionTypes.OpenUrl,
-                    value: 'https://docs.microsoft.com/en-us/azure/bot-service/?view=azure-bot-service-4.0'
-                },
-                {
-                    title: 'Ask a question',
-                    type: ActionTypes.OpenUrl,
-                    value: 'https://stackoverflow.com/questions/tagged/botframework'
-                },
-                {
-                    title: 'Learn how to deploy',
-                    type: ActionTypes.OpenUrl,
-                    value: 'https://docs.microsoft.com/en-us/azure/bot-service/bot-builder-howto-deploy-azure?view=azure-bot-service-4.0'
-                }
-            ]
-        );
+    public async run(context) {
+        await super.run(context);
 
-        await context.sendActivity({ attachments: [card] });
+        // Save any state changes. The load happened during the execution of the Dialog.
+        //await this.conversationState.saveChanges(context, false);
+        await this.userState.saveChanges(context, false);
     }
 }
