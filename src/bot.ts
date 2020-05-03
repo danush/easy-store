@@ -9,12 +9,69 @@ import {
     TurnContext, 
     UserState } from 'botbuilder';
 
+import {LuisRecognizer, LuisApplication, LuisRecognizerOptionsV2, LuisRecognizerOptionsV3} from 'botbuilder-ai';
+
 export class OrderAssistantBot extends ActivityHandler {
+
+    dispatchRecognizer: LuisRecognizer;
+    userStatePropName = 'userTransitionState';
+    userTransitionState: any;
+
     constructor(userState: UserState) {
         super();
+        
+        const dispatchRecognizer = new LuisRecognizer({
+            applicationId: process.env.LuisAppId,
+            endpointKey: process.env.LuisAPIKey,
+            endpoint: process.env.LuisAPIHostName
+        }, <LuisRecognizerOptionsV2> {
+            includeAllIntents: true,
+            includeInstanceData: true,
+            staging: /"1"/.test(process.env.LuisIsStaging)
+        }, true);
+
+        this.dispatchRecognizer = dispatchRecognizer;
+            
         // See https://aka.ms/about-bot-activity-message to learn more about the message and other activity types.
         this.onMessage(async (context, next) => {
+            console.log('Processing Message Activity.');
+            console.log(context.activity.text)
             const replyText = `Echo: ${ context.activity.text }`;
+            var recognizerResult;
+
+            console.log("**************************************");
+                console.log(context);
+                console.log(JSON.stringify(context));
+                console.log("***************************************");
+            
+            try{ 
+                recognizerResult = await dispatchRecognizer.recognize(context);
+                const intent = LuisRecognizer.topIntent(recognizerResult);
+                console.log("**************************************");
+                console.log(intent);
+                console.log(JSON.stringify(intent));
+                console.log("***************************************");
+            }catch(e){
+                console.log(e)
+                console.log(JSON.stringify(e))
+            }
+
+            // switch (expression) {
+            //     case constant - expression1: {
+            //         //statements; 
+            //         break;
+            //     }
+            //     case constant_expression2: {
+            //         //statements; 
+            //         break;
+            //     }
+            //     default: {
+            //         //statements; 
+            //         break;
+            //     }
+            // } 
+            
+            
             await context.sendActivity(MessageFactory.text(replyText, replyText));
             // By calling next() you ensure that the next BotHandler is run.
             await next();
