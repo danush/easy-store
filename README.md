@@ -1,4 +1,4 @@
-# echo-bot
+# easy-store bot
 
 Bot Builder v4 echo bot sample
 
